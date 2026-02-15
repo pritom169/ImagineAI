@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: imagineai-fastapi
+  namespace: imagineai
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+        - name: fastapi
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: imagineai-celery-worker
+  namespace: imagineai
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+        - name: celery-worker
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: imagineai-django
+  namespace: imagineai
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+        - name: django
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: imagineai-frontend
+  namespace: imagineai
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+        - name: frontend
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: imagineai-fastapi
+  namespace: imagineai
+spec:
+  minReplicas: 1
+  maxReplicas: 2
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: imagineai-celery-worker
+  namespace: imagineai
+spec:
+  minReplicas: 1
+  maxReplicas: 3
