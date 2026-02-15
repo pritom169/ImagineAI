@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: imagineai-config
+  namespace: imagineai
+  labels:
+    app.kubernetes.io/name: imagineai
+    app.kubernetes.io/part-of: imagineai-platform
+    app.kubernetes.io/managed-by: kustomize
+data:
+  # Application
+  APP_NAME: "ImagineAI"
+  APP_ENV: "production"
+  LOG_LEVEL: "info"
+  LOG_FORMAT: "json"
+
+  # FastAPI
+  FASTAPI_HOST: "0.0.0.0"
+  FASTAPI_PORT: "8000"
+  FASTAPI_WORKERS: "4"
+  FASTAPI_RELOAD: "false"
+  CORS_ORIGINS: "https://imagineai.example.com"
+
+  # Django Admin
+  DJANGO_HOST: "0.0.0.0"
+  DJANGO_PORT: "8001"
+  DJANGO_DEBUG: "false"
+  DJANGO_ALLOWED_HOSTS: "admin.imagineai.example.com"
+
+  # Database
+  DB_HOST: "imagineai-postgresql.imagineai.svc.cluster.local"
+  DB_PORT: "5432"
+  DB_NAME: "imagineai"
+  DB_POOL_SIZE: "20"
+  DB_MAX_OVERFLOW: "10"
+  DB_POOL_TIMEOUT: "30"
+
+  # Redis
+  REDIS_HOST: "imagineai-redis-master.imagineai.svc.cluster.local"
+  REDIS_PORT: "6379"
+  REDIS_DB: "0"
+  REDIS_CACHE_DB: "1"
+
+  # Celery
+  CELERY_BROKER_URL: "redis://imagineai-redis-master.imagineai.svc.cluster.local:6379/0"
+  CELERY_RESULT_BACKEND: "redis://imagineai-redis-master.imagineai.svc.cluster.local:6379/0"
+  CELERY_TASK_SERIALIZER: "json"
+  CELERY_RESULT_SERIALIZER: "json"
+  CELERY_ACCEPT_CONTENT: "json"
+  CELERY_TASK_TRACK_STARTED: "true"
+  CELERY_WORKER_CONCURRENCY: "4"
+  CELERY_WORKER_PREFETCH_MULTIPLIER: "1"
+  CELERY_TASK_ACKS_LATE: "true"
+  CELERY_WORKER_MAX_TASKS_PER_CHILD: "1000"
+
+  # ML Pipeline
+  ML_MODEL_PATH: "/app/ml/weights"
+  ML_BATCH_SIZE: "16"
+  ML_DEVICE: "auto"
+  ML_MODEL_CACHE_TTL: "3600"
+
+  # Object Storage (S3)
+  S3_BUCKET_NAME: "imagineai-uploads"
+  S3_REGION: "us-east-1"
+  S3_PRESIGNED_URL_EXPIRY: "3600"
+
+  # Monitoring
+  PROMETHEUS_METRICS_ENABLED: "true"
+  PROMETHEUS_METRICS_PATH: "/metrics"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.monitoring.svc.cluster.local:4317"
+  OTEL_SERVICE_NAME: "imagineai"
