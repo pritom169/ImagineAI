@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: imagineai-django
+  namespace: imagineai
+  labels:
+    app.kubernetes.io/name: django
+    app.kubernetes.io/instance: imagineai-django
+    app.kubernetes.io/component: admin
+    app.kubernetes.io/part-of: imagineai-platform
+    app.kubernetes.io/managed-by: kustomize
+spec:
+  replicas: 1
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: django
+      app.kubernetes.io/instance: imagineai-django
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: django
+        app.kubernetes.io/instance: imagineai-django
+        app.kubernetes.io/component: admin
+        app.kubernetes.io/part-of: imagineai-platform
+    spec:
+      serviceAccountName: imagineai-sa
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: django
+          image: imagineai/django-admin:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8001
+              protocol: TCP
+          command: ["gunicorn"]
+          args:
+            - "django_admin.wsgi:application"
+            - "--bind=0.0.0.0:8001"
+            - "--workers=2"
+            - "--timeout=120"
+            - "--access-logfile=-"
+          envFrom:
+            - configMapRef:
+                name: imagineai-config
+            - secretRef:
+                name: imagineai-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /admin/login/
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /admin/login/
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: static
+              mountPath: /app/staticfiles
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 50Mi
+        - name: static
+          emptyDir:
+            sizeLimit: 200Mi
