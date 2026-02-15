@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: imagineai
+  labels:
+    app.kubernetes.io/name: imagineai
+    app.kubernetes.io/part-of: imagineai-platform
+    app.kubernetes.io/managed-by: kustomize
+  annotations:
+    purpose: "ImagineAI AI-powered image analysis platform"
