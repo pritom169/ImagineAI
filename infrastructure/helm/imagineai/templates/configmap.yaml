@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "imagineai.fullname" . }}-config
+  labels:
+    {{- include "imagineai.labels" . | nindent 4 }}
+data:
+  APP_NAME: "ImagineAI"
+  APP_ENV: {{ .Values.global.environment | quote }}
+  LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+  LOG_FORMAT: {{ .Values.config.logFormat | quote }}
+  FASTAPI_HOST: "0.0.0.0"
+  FASTAPI_PORT: {{ .Values.fastapi.port | quote }}
+  FASTAPI_WORKERS: {{ .Values.fastapi.workers | quote }}
+  DJANGO_HOST: "0.0.0.0"
+  DJANGO_PORT: {{ .Values.django.port | quote }}
+  CORS_ORIGINS: {{ .Values.config.corsOrigins | quote }}
+  DB_HOST: {{ .Values.config.db.host | quote }}
+  DB_PORT: {{ .Values.config.db.port | quote }}
+  DB_NAME: {{ .Values.config.db.name | quote }}
+  DB_POOL_SIZE: {{ .Values.config.db.poolSize | quote }}
+  DB_MAX_OVERFLOW: {{ .Values.config.db.maxOverflow | quote }}
+  REDIS_HOST: {{ .Values.config.redis.host | quote }}
+  REDIS_PORT: {{ .Values.config.redis.port | quote }}
+  S3_BUCKET_NAME: {{ .Values.config.s3.bucketName | quote }}
+  S3_REGION: {{ .Values.config.s3.region | quote }}
+  ML_MODEL_PATH: {{ .Values.config.ml.modelPath | quote }}
+  ML_BATCH_SIZE: {{ .Values.config.ml.batchSize | quote }}
+  ML_DEVICE: {{ .Values.config.ml.device | quote }}
+  CELERY_WORKER_CONCURRENCY: {{ .Values.celeryWorker.concurrency | quote }}
+  PROMETHEUS_METRICS_ENABLED: {{ .Values.monitoring.enabled | quote }}
