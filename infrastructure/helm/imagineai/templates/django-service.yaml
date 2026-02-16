@@ -1,0 +1,18 @@
+{{- if .Values.django.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "imagineai.fullname" . }}-django
+  labels:
+    {{- include "imagineai.labels" . | nindent 4 }}
+    {{- include "imagineai.selectorLabels" (dict "component" "django" "root" .) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.django.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "imagineai.selectorLabels" (dict "component" "django" "root" .) | nindent 4 }}
+{{- end }}

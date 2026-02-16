@@ -1,0 +1,62 @@
+{{- if .Values.celeryBeat.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "imagineai.fullname" . }}-celery-beat
+  labels:
+    {{- include "imagineai.labels" . | nindent 4 }}
+    {{- include "imagineai.selectorLabels" (dict "component" "celery-beat" "root" .) | nindent 4 }}
+    app.kubernetes.io/component: scheduler
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "imagineai.selectorLabels" (dict "component" "celery-beat" "root" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "imagineai.selectorLabels" (dict "component" "celery-beat" "root" .) | nindent 8 }}
+        app.kubernetes.io/component: scheduler
+    spec:
+      serviceAccountName: {{ include "imagineai.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: celery-beat
+          image: {{ include "imagineai.image" (dict "root" . "repository" .Values.celeryBeat.image.repository "imageTag" .Values.celeryBeat.image.tag) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command: ["celery"]
+          args:
+            - "-A"
+            - "workers.celery_app:celery_app"
+            - "beat"
+            - "--loglevel=info"
+            - "--schedule=/tmp/celerybeat-schedule"
+          envFrom:
+            - configMapRef:
+                name: {{ include "imagineai.fullname" . }}-config
+            - secretRef:
+                name: {{ include "imagineai.fullname" . }}-secrets
+          resources:
+            {{- toYaml .Values.celeryBeat.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 50Mi
+{{- end }}
