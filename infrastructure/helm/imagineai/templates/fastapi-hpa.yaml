@@ -1,0 +1,29 @@
+{{- if and .Values.fastapi.enabled .Values.fastapi.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "imagineai.fullname" . }}-fastapi
+  labels:
+    {{- include "imagineai.labels" . | nindent 4 }}
+    {{- include "imagineai.selectorLabels" (dict "component" "fastapi" "root" .) | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "imagineai.fullname" . }}-fastapi
+  minReplicas: {{ .Values.fastapi.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.fastapi.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.fastapi.autoscaling.targetCPUUtilization }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.fastapi.autoscaling.targetMemoryUtilization }}
+{{- end }}

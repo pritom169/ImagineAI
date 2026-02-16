@@ -1,0 +1,105 @@
+{{- if .Values.fastapi.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "imagineai.fullname" . }}-fastapi
+  labels:
+    {{- include "imagineai.labels" . | nindent 4 }}
+    {{- include "imagineai.selectorLabels" (dict "component" "fastapi" "root" .) | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  replicas: {{ .Values.fastapi.replicaCount }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "imagineai.selectorLabels" (dict "component" "fastapi" "root" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "imagineai.selectorLabels" (dict "component" "fastapi" "root" .) | nindent 8 }}
+        app.kubernetes.io/component: api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ .Values.fastapi.port | quote }}
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: {{ include "imagineai.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: fastapi
+          image: {{ include "imagineai.image" (dict "root" . "repository" .Values.fastapi.image.repository "imageTag" .Values.fastapi.image.tag) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.fastapi.port }}
+              protocol: TCP
+          command: ["uvicorn"]
+          args:
+            - "fastapi_app.main:app"
+            - "--host=0.0.0.0"
+            - "--port={{ .Values.fastapi.port }}"
+            - "--workers={{ .Values.fastapi.workers }}"
+            - "--proxy-headers"
+            - "--forwarded-allow-ips=*"
+          envFrom:
+            - configMapRef:
+                name: {{ include "imagineai.fullname" . }}-config
+            - secretRef:
+                name: {{ include "imagineai.fullname" . }}-secrets
+          resources:
+            {{- toYaml .Values.fastapi.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health/ready
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: ml-cache
+              mountPath: /app/ml/cache
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 100Mi
+        - name: ml-cache
+          emptyDir:
+            sizeLimit: 2Gi
+      {{- with .Values.fastapi.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.fastapi.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
