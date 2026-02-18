@@ -1,0 +1,50 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: imagineai
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: ImagineAI Platform Project
+  sourceRepos:
+    - "https://gitlab.com/imagineai/*"
+    - "https://charts.bitnami.com/bitnami"
+  destinations:
+    - namespace: imagineai
+      server: https://kubernetes.default.svc
+    - namespace: monitoring
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+    - group: networking.k8s.io
+      kind: Ingress
+  namespaceResourceWhitelist:
+    - group: ""
+      kind: "*"
+    - group: apps
+      kind: "*"
+    - group: autoscaling
+      kind: "*"
+    - group: batch
+      kind: "*"
+    - group: networking.k8s.io
+      kind: "*"
+    - group: policy
+      kind: PodDisruptionBudget
+    - group: monitoring.coreos.com
+      kind: ServiceMonitor
+  roles:
+    - name: admin
+      description: Full access to imagineai project
+      policies:
+        - p, proj:imagineai:admin, applications, *, imagineai/*, allow
+      groups:
+        - imagineai-admins
+    - name: readonly
+      description: Read-only access
+      policies:
+        - p, proj:imagineai:readonly, applications, get, imagineai/*, allow
+      groups:
+        - imagineai-developers
