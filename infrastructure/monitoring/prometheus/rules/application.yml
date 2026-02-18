@@ -1,0 +1,116 @@
+groups:
+  - name: imagineai.api
+    rules:
+      - alert: HighRequestLatency
+        expr: histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{service="fastapi"}[5m])) by (le, method, endpoint)) > 2
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "High API request latency (p95 > 2s)"
+          description: "Endpoint {{ $labels.method }} {{ $labels.endpoint }} has p95 latency of {{ $value }}s"
+
+      - alert: HighErrorRate
+        expr: sum(rate(http_requests_total{service="fastapi",status=~"5.."}[5m])) / sum(rate(http_requests_total{service="fastapi"}[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "API error rate above 5%"
+          description: "Current error rate: {{ $value | humanizePercentage }}"
+
+      - alert: HighRequestRate
+        expr: sum(rate(http_requests_total{service="fastapi"}[5m])) > 500
+        for: 10m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Unusually high request rate"
+          description: "Current rate: {{ $value }} req/s"
+
+      - alert: APIDown
+        expr: up{service="fastapi"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "FastAPI instance is down"
+          description: "Pod {{ $labels.pod }} has been down for more than 1 minute"
+
+  - name: imagineai.celery
+    rules:
+      - alert: CeleryWorkerDown
+        expr: celery_workers_active == 0
+        for: 2m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "No active Celery workers"
+          description: "All Celery workers are down"
+
+      - alert: CeleryTaskFailureRate
+        expr: sum(rate(celery_task_failed_total[5m])) / sum(rate(celery_task_received_total[5m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Celery task failure rate above 10%"
+          description: "Current failure rate: {{ $value | humanizePercentage }}"
+
+      - alert: CeleryQueueBacklog
+        expr: celery_queue_length > 100
+        for: 15m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Celery queue backlog growing"
+          description: "Queue {{ $labels.queue }} has {{ $value }} pending tasks"
+
+      - alert: CeleryTaskStuck
+        expr: celery_task_runtime_seconds{quantile="0.99"} > 300
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "Celery tasks taking too long"
+          description: "p99 task runtime is {{ $value }}s"
+
+  - name: imagineai.ml
+    rules:
+      - alert: MLInferenceSlow
+        expr: histogram_quantile(0.95, sum(rate(ml_inference_duration_seconds_bucket[5m])) by (le, model)) > 10
+        for: 5m
+        labels:
+          severity: warning
+          team: ml
+        annotations:
+          summary: "ML inference is slow (p95 > 10s)"
+          description: "Model {{ $labels.model }} p95 inference time: {{ $value }}s"
+
+      - alert: MLModelLoadFailure
+        expr: increase(ml_model_load_errors_total[15m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          team: ml
+        annotations:
+          summary: "ML model failed to load"
+          description: "Model loading errors detected in the last 15 minutes"
+
+      - alert: ImageProcessingBacklog
+        expr: celery_queue_length{queue="image_processing"} > 50
+        for: 10m
+        labels:
+          severity: warning
+          team: ml
+        annotations:
+          summary: "Image processing queue backlog"
+          description: "{{ $value }} images waiting for processing"
