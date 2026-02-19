@@ -1,0 +1,291 @@
+stages:
+  - lint
+  - test
+  - build
+  - security
+  - deploy
+
+variables:
+  DOCKER_BUILDKIT: "1"
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  AWS_DEFAULT_REGION: us-east-1
+  ECR_REGISTRY: "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
+  IMAGE_TAG: "${CI_COMMIT_SHORT_SHA}"
+
+.python_base: &python_base
+  image: python:3.11-slim
+  before_script:
+    - pip install --upgrade pip
+    - pip install -r backend/requirements.txt
+  cache:
+    key: python-deps
+    paths:
+      - .cache/pip
+
+.node_base: &node_base
+  image: node:20-alpine
+  before_script:
+    - cd frontend && npm ci
+  cache:
+    key: node-deps
+    paths:
+      - frontend/node_modules
+
+# ─── Lint Stage ────────────────────────────────────────────────────────────────
+
+lint:python:
+  <<: *python_base
+  stage: lint
+  script:
+    - pip install ruff mypy
+    - ruff check backend/
+    - ruff format --check backend/
+    - mypy backend/ --ignore-missing-imports
+  rules:
+    - changes:
+        - backend/**/*
+
+lint:frontend:
+  <<: *node_base
+  stage: lint
+  script:
+    - npm run lint
+  rules:
+    - changes:
+        - frontend/**/*
+
+lint:terraform:
+  image: hashicorp/terraform:1.5
+  stage: lint
+  script:
+    - cd infrastructure/terraform
+    - terraform fmt -check -recursive
+    - terraform init -backend=false
+    - terraform validate
+  rules:
+    - changes:
+        - infrastructure/terraform/**/*
+
+lint:helm:
+  image: alpine/helm:3.14
+  stage: lint
+  script:
+    - helm lint infrastructure/helm/imagineai/
+  rules:
+    - changes:
+        - infrastructure/helm/**/*
+
+lint:kubernetes:
+  image: garethr/kubeval:latest
+  stage: lint
+  script:
+    - kubeval --strict infrastructure/k8s/base/*.yaml
+  allow_failure: true
+  rules:
+    - changes:
+        - infrastructure/k8s/**/*
+
+# ─── Test Stage ────────────────────────────────────────────────────────────────
+
+test:backend:
+  <<: *python_base
+  stage: test
+  services:
+    - name: postgres:16-alpine
+      alias: postgres
+      variables:
+        POSTGRES_DB: test_imagineai
+        POSTGRES_USER: test_user
+        POSTGRES_PASSWORD: test_pass
+    - name: redis:7-alpine
+      alias: redis
+  variables:
+    DATABASE_URL: "postgresql+asyncpg://test_user:test_pass@postgres:5432/test_imagineai"
+    REDIS_URL: "redis://redis:6379/0"
+  script:
+    - pip install pytest pytest-asyncio pytest-cov httpx factory-boy
+    - cd backend
+    - pytest tests/ -v --cov=. --cov-report=xml --cov-report=term-missing --junitxml=report.xml
+  coverage: '/(?i)total.*? (100(?:\.0+)?\%|[1-9]?\d(?:\.\d+)?\%)$/'
+  artifacts:
+    reports:
+      junit: backend/report.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: backend/coverage.xml
+    expire_in: 30 days
+  rules:
+    - changes:
+        - backend/**/*
+
+test:frontend:
+  <<: *node_base
+  stage: test
+  script:
+    - npm run test -- --no-watch --code-coverage
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: frontend/coverage/cobertura-coverage.xml
+    expire_in: 30 days
+  rules:
+    - changes:
+        - frontend/**/*
+
+# ─── Build Stage ───────────────────────────────────────────────────────────────
+
+.docker_build: &docker_build
+  image: docker:24-dind
+  stage: build
+  services:
+    - docker:24-dind
+  before_script:
+    - apk add --no-cache aws-cli
+    - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
+
+build:backend:
+  <<: *docker_build
+  script:
+    - |
+      docker build \
+        --target production \
+        --build-arg BUILDKIT_INLINE_CACHE=1 \
+        --cache-from $ECR_REGISTRY/imagineai-fastapi:latest \
+        -t $ECR_REGISTRY/imagineai-fastapi:$IMAGE_TAG \
+        -t $ECR_REGISTRY/imagineai-fastapi:latest \
+        -f docker/backend/Dockerfile .
+    - docker push $ECR_REGISTRY/imagineai-fastapi:$IMAGE_TAG
+    - docker push $ECR_REGISTRY/imagineai-fastapi:latest
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "staging" || $CI_COMMIT_BRANCH == "develop"
+      changes:
+        - backend/**/*
+        - docker/backend/**/*
+
+build:celery-worker:
+  <<: *docker_build
+  script:
+    - |
+      docker build \
+        --target worker \
+        --build-arg BUILDKIT_INLINE_CACHE=1 \
+        --cache-from $ECR_REGISTRY/imagineai-celery-worker:latest \
+        -t $ECR_REGISTRY/imagineai-celery-worker:$IMAGE_TAG \
+        -t $ECR_REGISTRY/imagineai-celery-worker:latest \
+        -f docker/backend/Dockerfile .
+    - docker push $ECR_REGISTRY/imagineai-celery-worker:$IMAGE_TAG
+    - docker push $ECR_REGISTRY/imagineai-celery-worker:latest
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "staging" || $CI_COMMIT_BRANCH == "develop"
+      changes:
+        - backend/**/*
+        - docker/backend/**/*
+
+build:django-admin:
+  <<: *docker_build
+  script:
+    - |
+      docker build \
+        --build-arg BUILDKIT_INLINE_CACHE=1 \
+        --cache-from $ECR_REGISTRY/imagineai-django-admin:latest \
+        -t $ECR_REGISTRY/imagineai-django-admin:$IMAGE_TAG \
+        -t $ECR_REGISTRY/imagineai-django-admin:latest \
+        -f docker/django/Dockerfile .
+    - docker push $ECR_REGISTRY/imagineai-django-admin:$IMAGE_TAG
+    - docker push $ECR_REGISTRY/imagineai-django-admin:latest
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "staging" || $CI_COMMIT_BRANCH == "develop"
+      changes:
+        - backend/**/*
+        - docker/django/**/*
+
+build:frontend:
+  <<: *docker_build
+  script:
+    - |
+      docker build \
+        --build-arg BUILDKIT_INLINE_CACHE=1 \
+        --cache-from $ECR_REGISTRY/imagineai-frontend:latest \
+        -t $ECR_REGISTRY/imagineai-frontend:$IMAGE_TAG \
+        -t $ECR_REGISTRY/imagineai-frontend:latest \
+        -f docker/frontend/Dockerfile .
+    - docker push $ECR_REGISTRY/imagineai-frontend:$IMAGE_TAG
+    - docker push $ECR_REGISTRY/imagineai-frontend:latest
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "staging" || $CI_COMMIT_BRANCH == "develop"
+      changes:
+        - frontend/**/*
+        - docker/frontend/**/*
+
+# ─── Security Stage ───────────────────────────────────────────────────────────
+
+security:trivy:
+  image:
+    name: aquasec/trivy:latest
+    entrypoint: [""]
+  stage: security
+  script:
+    - trivy fs --severity HIGH,CRITICAL --exit-code 1 --format table backend/
+    - trivy fs --severity HIGH,CRITICAL --exit-code 1 --format table frontend/
+  allow_failure: true
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "staging"
+
+security:dependency-check:
+  <<: *python_base
+  stage: security
+  script:
+    - pip install safety
+    - safety check -r backend/requirements.txt --full-report
+  allow_failure: true
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "staging"
+
+# ─── Deploy Stage ─────────────────────────────────────────────────────────────
+
+.deploy_base: &deploy_base
+  image: alpine:3.19
+  stage: deploy
+  before_script:
+    - apk add --no-cache curl git
+    - curl -sSL -o /usr/local/bin/argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+    - chmod +x /usr/local/bin/argocd
+    - argocd login $ARGOCD_SERVER --username $ARGOCD_USERNAME --password $ARGOCD_PASSWORD --grpc-web
+
+deploy:dev:
+  <<: *deploy_base
+  script:
+    - argocd app set imagineai-dev -p image.tag=$IMAGE_TAG
+    - argocd app sync imagineai-dev --prune --force
+    - argocd app wait imagineai-dev --timeout 300
+  environment:
+    name: development
+    url: https://dev.imagineai.example.com
+  rules:
+    - if: $CI_COMMIT_BRANCH == "develop"
+
+deploy:staging:
+  <<: *deploy_base
+  script:
+    - argocd app set imagineai-staging -p image.tag=$IMAGE_TAG
+    - argocd app sync imagineai-staging --prune --force
+    - argocd app wait imagineai-staging --timeout 300
+  environment:
+    name: staging
+    url: https://staging.imagineai.example.com
+  rules:
+    - if: $CI_COMMIT_BRANCH == "staging"
+
+deploy:prod:
+  <<: *deploy_base
+  script:
+    - argocd app set imagineai-prod -p image.tag=$IMAGE_TAG
+    - argocd app sync imagineai-prod --prune
+    - argocd app wait imagineai-prod --timeout 600
+  environment:
+    name: production
+    url: https://imagineai.example.com
+  when: manual
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
