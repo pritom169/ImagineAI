@@ -1,0 +1,75 @@
+{{- if .Values.celeryWorker.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "imagineai.fullname" . }}-celery-worker
+  labels:
+    {{- include "imagineai.labels" . | nindent 4 }}
+    {{- include "imagineai.selectorLabels" (dict "component" "celery-worker" "root" .) | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  replicas: {{ .Values.celeryWorker.replicaCount }}
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      {{- include "imagineai.selectorLabels" (dict "component" "celery-worker" "root" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "imagineai.selectorLabels" (dict "component" "celery-worker" "root" .) | nindent 8 }}
+        app.kubernetes.io/component: worker
+    spec:
+      serviceAccountName: {{ include "imagineai.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 300
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: celery-worker
+          image: {{ include "imagineai.image" (dict "root" . "repository" .Values.celeryWorker.image.repository "imageTag" .Values.celeryWorker.image.tag) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command: ["celery"]
+          args:
+            - "-A"
+            - "workers.celery_app:celery_app"
+            - "worker"
+            - "--loglevel=info"
+            - "--concurrency={{ .Values.celeryWorker.concurrency }}"
+            - "--max-tasks-per-child=1000"
+            - "-Q"
+            - {{ .Values.celeryWorker.queues | quote }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "imagineai.fullname" . }}-config
+            - secretRef:
+                name: {{ include "imagineai.fullname" . }}-secrets
+          resources:
+            {{- toYaml .Values.celeryWorker.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: ml-cache
+              mountPath: /app/ml/cache
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 500Mi
+        - name: ml-cache
+          emptyDir:
+            sizeLimit: 4Gi
+      {{- with .Values.celeryWorker.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

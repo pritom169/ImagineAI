@@ -1,0 +1,82 @@
+{{- if .Values.django.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "imagineai.fullname" . }}-django
+  labels:
+    {{- include "imagineai.labels" . | nindent 4 }}
+    {{- include "imagineai.selectorLabels" (dict "component" "django" "root" .) | nindent 4 }}
+    app.kubernetes.io/component: admin
+spec:
+  replicas: {{ .Values.django.replicaCount }}
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      {{- include "imagineai.selectorLabels" (dict "component" "django" "root" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "imagineai.selectorLabels" (dict "component" "django" "root" .) | nindent 8 }}
+        app.kubernetes.io/component: admin
+    spec:
+      serviceAccountName: {{ include "imagineai.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: django
+          image: {{ include "imagineai.image" (dict "root" . "repository" .Values.django.image.repository "imageTag" .Values.django.image.tag) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.django.port }}
+              protocol: TCP
+          command: ["gunicorn"]
+          args:
+            - "django_admin.wsgi:application"
+            - "--bind=0.0.0.0:{{ .Values.django.port }}"
+            - "--workers={{ .Values.django.workers }}"
+            - "--timeout=120"
+          envFrom:
+            - configMapRef:
+                name: {{ include "imagineai.fullname" . }}-config
+            - secretRef:
+                name: {{ include "imagineai.fullname" . }}-secrets
+          resources:
+            {{- toYaml .Values.django.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /admin/login/
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /admin/login/
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: static
+              mountPath: /app/staticfiles
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 50Mi
+        - name: static
+          emptyDir:
+            sizeLimit: 200Mi
+{{- end }}
