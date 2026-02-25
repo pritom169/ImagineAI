@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: imagineai-celery-worker
+  namespace: imagineai
+  labels:
+    app.kubernetes.io/name: celery-worker
+    app.kubernetes.io/instance: imagineai-celery-worker
+    app.kubernetes.io/component: worker
+    app.kubernetes.io/part-of: imagineai-platform
+    app.kubernetes.io/managed-by: kustomize
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: celery-worker
+      app.kubernetes.io/instance: imagineai-celery-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: celery-worker
+        app.kubernetes.io/instance: imagineai-celery-worker
+        app.kubernetes.io/component: worker
+        app.kubernetes.io/part-of: imagineai-platform
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9808"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: imagineai-sa
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 300
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: celery-worker
+          image: imagineai/celery-worker:latest
+          imagePullPolicy: Always
+          command: ["celery"]
+          args:
+            - "-A"
+            - "workers.celery_app:celery_app"
+            - "worker"
+            - "--loglevel=info"
+            - "--concurrency=4"
+            - "--max-tasks-per-child=1000"
+            - "--prefetch-multiplier=1"
+            - "-Q"
+            - "image_processing,ml_analysis,notifications"
+          envFrom:
+            - configMapRef:
+                name: imagineai-config
+            - secretRef:
+                name: imagineai-secrets
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+          livenessProbe:
+            exec:
+              command:
+                - celery
+                - "-A"
+                - "workers.celery_app:celery_app"
+                - "inspect"
+                - "ping"
+                - "--timeout=10"
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            timeoutSeconds: 15
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: ml-cache
+              mountPath: /app/ml/cache
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 500Mi
+        - name: ml-cache
+          emptyDir:
+            sizeLimit: 4Gi

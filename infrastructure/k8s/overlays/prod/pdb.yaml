@@ -1,0 +1,44 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: imagineai-fastapi-pdb
+  namespace: imagineai
+  labels:
+    app.kubernetes.io/name: fastapi
+    app.kubernetes.io/part-of: imagineai-platform
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fastapi
+      app.kubernetes.io/instance: imagineai-fastapi
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: imagineai-celery-worker-pdb
+  namespace: imagineai
+  labels:
+    app.kubernetes.io/name: celery-worker
+    app.kubernetes.io/part-of: imagineai-platform
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: celery-worker
+      app.kubernetes.io/instance: imagineai-celery-worker
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: imagineai-frontend-pdb
+  namespace: imagineai
+  labels:
+    app.kubernetes.io/name: frontend
+    app.kubernetes.io/part-of: imagineai-platform
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: frontend
+      app.kubernetes.io/instance: imagineai-frontend
